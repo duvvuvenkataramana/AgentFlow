@@ -29,6 +29,9 @@ testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning"
 ]
+markers = [
+    "live: marks tests that hit real Codex APIs and require OPENAI_API_KEY"
+]
 
 [project.scripts]
 agentflow = "agentflow.cli:main"

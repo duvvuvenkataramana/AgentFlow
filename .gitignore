@@ -1,6 +1,51 @@
-.env
+# Python: sensible defaults for repo-level .gitignore
+
+# Byte-compiled / caches
 __pycache__/
-.pytest_cache/
-.venv/
-dist/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
 build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+wheels/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Type checking / caches
+.mypy_cache/
+.pyre/
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Sandbox / local databases and artifacts
+sandbox/
+sandbox/*.db
+sandbox/*.sqlite3
+sandbox/*.yaml
+sandbox/*.yml
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db

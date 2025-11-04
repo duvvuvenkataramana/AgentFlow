@@ -57,8 +57,6 @@ class CodexCLIAdapter:
             "--json",
             "--sandbox",
             self._settings.sandbox_mode,
-            "--ask-for-approval",
-            self._settings.approval_policy,
         ]
         command.extend(self._extra_args)
         return command

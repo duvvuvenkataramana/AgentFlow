@@ -258,3 +258,7 @@ def _build_plan_document(
 def _write_plan(path: Path, payload: Dict[str, Any]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
+
+
+if __name__ == "__main__":  # pragma: no cover - module entry point
+    raise SystemExit(main())
