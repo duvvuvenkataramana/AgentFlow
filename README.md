@@ -66,6 +66,17 @@ The CLI will emit `sandbox/agentflow-<timestamp>.yaml`. That artifact contains:
 - The original Codex exchange.
 - Structured `flow_spec` JSON.
 - Synthetic `flow::` nodes injected into the plan so the viewer graph shows every branch, loop, and evaluation path.
+- Optional AgentFlowLanguage (`.afl`) transcription when `--output afl` is provided.
+
+## AgentFlowLanguage Output
+
+Pseudo-code prompts are auto-compiled when the Codex reply does not already contain a `flow_spec`. Use `--output afl` to persist an AgentFlowLanguage file alongside the YAML artifact; the compiler asks the model to translate the snippet into both structured graph data and a readable loop/branch script.
+
+```bash
+py -3 -m agentflow.cli --output afl "while(exploring){ ask_questions(); investigate_clues(); connect_patterns(surprises); if (blocked) { rethink_strategy(); } }"
+```
+
+The command above writes the standard `sandbox/agentflow-<timestamp>.yaml` artifact plus `sandbox/agentflow-<timestamp>.afl`, which captures the flow in AgentFlowLanguage form.
 
 ## Inspect the DAG in the Viewer
 

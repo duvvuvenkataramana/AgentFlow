@@ -17,12 +17,34 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from textwrap import dedent
 
 import yaml
 
 from agentflow.adapters import CodexCLIAdapter, CodexCLIError
 from agentflow.config import ConfigurationError, Settings
 from agentflow.viewer import run_viewer
+
+
+FLOW_SPEC_COMPILER_PROMPT = dedent(
+    """\
+    You are the AgentFlowLanguage compiler. Convert the provided pseudo code or natural language routine into a structured flow description.
+
+    Return your answer as a markdown ```json``` block containing an object with exactly these keys:
+      - "flow_spec": a JSON object with "nodes" (list) and "edges" (list) describing the control flow. Each node must include "id", "label", and "type".
+      - "agentflowlanguage": a multiline string that mirrors the flow using AgentFlowLanguage syntax with constructs such as while(), if(), else, and semicolon-terminated actions.
+
+    Flow spec requirements:
+      * Use the node types "action", "branch", "loop", or other canonical AgentFlow types.
+      * Provide "on_true" / "on_false" targets for branch and loop nodes when available.
+      * Edges must include "source" and "target"; include a short "label" when it clarifies the path (e.g., "true", "false", "loop").
+
+    Pseudo-code input:
+    <<<
+    {pseudo_code}
+    >>>
+    """
+)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -40,12 +62,31 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args[0] == "view":
         return _handle_view_command(args[1:])
 
-    prompt = " ".join(args).strip()
+    parser = argparse.ArgumentParser(
+        prog="agentflow",
+        add_help=True,
+        description="Execute a prompt through the Codex adapter and persist an AgentFlow artifact.",
+    )
+    parser.add_argument(
+        "--output",
+        choices=["yaml", "afl"],
+        default="yaml",
+        help="Artifact output preference (default: yaml). Use 'afl' to also emit an AgentFlowLanguage file.",
+    )
+    parser.add_argument(
+        "prompt",
+        nargs=argparse.REMAINDER,
+        help="Prompt text to send to the Codex adapter.",
+    )
+
+    namespace = parser.parse_args(args)
+    prompt_parts = namespace.prompt
+    prompt = " ".join(prompt_parts).strip()
     if not prompt:
         _print_usage()
         return 1
 
-    return _handle_prompt(prompt)
+    return _handle_prompt(prompt, output_mode=namespace.output)
 
 
 def _print_usage() -> None:
@@ -93,7 +134,7 @@ def _handle_view_command(args: List[str]) -> int:
     return 0
 
 
-def _handle_prompt(prompt: str) -> int:
+def _handle_prompt(prompt: str, *, output_mode: str) -> int:
     try:
         settings = Settings.from_env()
     except ConfigurationError as exc:
@@ -115,6 +156,9 @@ def _handle_prompt(prompt: str) -> int:
     notes = "Codex invocation succeeded."
     evaluation_payload: Optional[Dict[str, Any]] = None
     flow_spec_payload: Optional[Dict[str, Any]] = None
+    flow_spec_source: Optional[str] = None
+    afl_text: Optional[str] = None
+    request_afl = output_mode == "afl"
 
     run_started = datetime.now(timezone.utc)
     try:
@@ -124,8 +168,13 @@ def _handle_prompt(prompt: str) -> int:
         usage = result.usage or {}
         flow_spec_payload = _extract_flow_spec_from_message(result.message)
         if flow_spec_payload:
+            flow_spec_source = "assistant"
             outputs["flow_spec"] = flow_spec_payload["flow_spec"]
             outputs["flow_spec_raw"] = flow_spec_payload["raw_json"]
+            afl_candidate = flow_spec_payload.get("agentflowlanguage")
+            if afl_candidate:
+                afl_text = afl_candidate
+                outputs["agentflowlanguage"] = afl_text
         evaluation_payload = _perform_self_evaluation(adapter, prompt, result.message)
         if evaluation_payload:
             outputs["evaluation"] = _build_evaluation_outputs(evaluation_payload)
@@ -141,8 +190,41 @@ def _handle_prompt(prompt: str) -> int:
         notes = f"Unexpected error: {exc.__class__.__name__}"
     run_finished = datetime.now(timezone.utc)
 
+    if plan_status == "completed" and (flow_spec_payload is None or (request_afl and not afl_text)):
+        compiler_details = _compile_flow_spec_from_prompt(adapter, prompt)
+        if compiler_details:
+            compiler_error = compiler_details.get("error")
+            if compiler_error:
+                outputs["flow_spec_compiler_error"] = compiler_error
+            else:
+                compiled_payload = compiler_details.get("flow_spec_payload")
+                if compiled_payload:
+                    flow_spec_payload = compiled_payload
+                    flow_spec_source = compiler_details.get("source") or "agentflowlanguage_compiler"
+                    outputs["flow_spec"] = flow_spec_payload["flow_spec"]
+                    outputs["flow_spec_raw"] = flow_spec_payload["raw_json"]
+                    afl_candidate = flow_spec_payload.get("agentflowlanguage")
+                    if afl_candidate:
+                        afl_text = afl_candidate
+                afl_from_compiler = compiler_details.get("agentflowlanguage")
+                if afl_from_compiler:
+                    afl_text = afl_from_compiler
+                outputs["flow_spec_compiler"] = {
+                    "message": compiler_details.get("message", ""),
+                    "usage": compiler_details.get("usage", {}),
+                    "events": compiler_details.get("events", []),
+                    "source": compiler_details.get("source", "agentflowlanguage_compiler"),
+                }
+                if afl_text:
+                    outputs["agentflowlanguage"] = afl_text
+
     if "events" not in outputs:
         outputs = {**outputs, "events": events}
+
+    if flow_spec_payload:
+        outputs["flow_spec_source"] = flow_spec_source or outputs.get("flow_spec_source") or "assistant"
+        if afl_text:
+            outputs["agentflowlanguage"] = afl_text
 
     duration = (run_finished - run_started).total_seconds()
     synthetic_nodes: List[Dict[str, Any]] = []
@@ -178,6 +260,16 @@ def _handle_prompt(prompt: str) -> int:
     _write_plan(target_path, plan_document)
 
     print(f"Wrote plan artifact: {target_path}")
+    if output_mode == "afl":
+        if afl_text:
+            afl_path = target_path.with_suffix(".afl")
+            _write_afl(afl_path, afl_text)
+            print(f"Wrote AgentFlowLanguage artifact: {afl_path}")
+        else:
+            print(
+                "AgentFlowLanguage output requested but no representation was generated.",
+                file=sys.stderr,
+            )
     if plan_status == "failed":
         print("Execution failed; inspect the YAML artifact for details.", file=sys.stderr)
         return 1
@@ -300,6 +392,11 @@ def _build_plan_document(
 def _write_plan(path: Path, payload: Dict[str, Any]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
+
+
+def _write_afl(path: Path, afl_text: str) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write(afl_text.rstrip() + "\n")
 
 
 def _perform_self_evaluation(
@@ -462,7 +559,14 @@ def _extract_flow_spec_from_message(message: str) -> Optional[Dict[str, Any]]:
     except json.JSONDecodeError:
         return None
 
-    flow_data = loaded.get("flow_spec") if isinstance(loaded, dict) else None
+    afl_text: Optional[str] = None
+    flow_data = None
+    if isinstance(loaded, dict):
+        flow_data = loaded.get("flow_spec")
+        afl_candidate = loaded.get("agentflowlanguage")
+        if isinstance(afl_candidate, str):
+            afl_text = afl_candidate.strip()
+
     if flow_data is None:
         flow_data = loaded
 
@@ -473,7 +577,46 @@ def _extract_flow_spec_from_message(message: str) -> Optional[Dict[str, Any]]:
     if not isinstance(nodes, list) or not nodes:
         return None
 
-    return {"flow_spec": flow_data, "raw_json": candidate}
+    payload: Dict[str, Any] = {"flow_spec": flow_data, "raw_json": candidate}
+    if afl_text:
+        payload["agentflowlanguage"] = afl_text
+    return payload
+
+
+def _compile_flow_spec_from_prompt(
+    adapter: CodexCLIAdapter,
+    pseudo_code: str,
+) -> Dict[str, Any]:
+    compiler_prompt = FLOW_SPEC_COMPILER_PROMPT.format(pseudo_code=pseudo_code.strip())
+
+    try:
+        compilation = adapter.run(compiler_prompt)
+    except CodexCLIError as exc:
+        return {
+            "error": f"AgentFlowLanguage compilation failed: {exc}",
+            "flow_spec_payload": None,
+            "message": "",
+            "events": [],
+            "usage": {},
+            "source": "agentflowlanguage_compiler",
+        }
+
+    payload = _extract_flow_spec_from_message(compilation.message)
+    response: Dict[str, Any] = {
+        "flow_spec_payload": payload,
+        "message": compilation.message,
+        "events": compilation.events,
+        "usage": compilation.usage or {},
+        "source": "agentflowlanguage_compiler",
+    }
+
+    if payload:
+        response["agentflowlanguage"] = payload.get("agentflowlanguage")
+    else:
+        response["agentflowlanguage"] = None
+        response["error"] = "Compiler response did not contain a valid flow_spec."
+
+    return response
 
 
 def _build_flow_nodes(
