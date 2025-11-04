@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 const statusToClass = (status) => {
   if (!status) return "status-other";
@@ -18,6 +18,13 @@ const escapeHtml = (value) => {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+};
+
+const formatMultiline = (value) => {
+  if (value === null || value === undefined) return "";
+  const normalized = String(value).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const withRealBreaks = normalized.replace(/\\n/g, "\n");
+  return escapeHtml(withRealBreaks).replace(/\n/g, "<br>");
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -198,10 +205,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const rawMessage = evaluation.raw_message;
       const cssClass = evaluation.css_class || "score-unknown";
 
-      if (score !== null || justification || rawMessage) {
-        const scoreLabel = score !== null && !Number.isNaN(score) ? score.toFixed(2) : "—";
-        const justificationBlock = justification ? "<p><strong>Justification:</strong> " + escapeHtml(justification) + "</p>" : "";
-        const rawBlock = rawMessage ? "<p><strong>Raw:</strong><br>" + escapeHtml(rawMessage) + "</p>" : "";
+      if (score != null || justification || rawMessage) {
+        const scoreLabel = Number.isFinite(score) ? score.toFixed(2) : "--";
+        const justificationBlock = justification ? `<p><strong>Justification:</strong><br>${formatMultiline(justification)}</p>` : "";
+        const rawBlock = rawMessage ? `<p><strong>Raw:</strong><br>${formatMultiline(rawMessage)}</p>` : "";
         nodeDetail.insertAdjacentHTML(
           "beforeend",
           `
@@ -220,6 +227,28 @@ document.addEventListener("DOMContentLoaded", () => {
       appendJson("Metrics", node.metrics || {});
       appendJson("Timeline", node.timeline || {});
       appendJson("History", node.history || []);
+    } else if (node.role === "evaluation") {
+      const evaluation = node.evaluation || {};
+      const cssClass = evaluation.css_class || "score-unknown";
+      const score = evaluation.score;
+      const justification = evaluation.justification;
+      const rawMessage = evaluation.raw_message;
+      const scoreLabel = Number.isFinite(score) ? score.toFixed(2) : "--";
+      const justificationBlock = justification
+        ? `<p><strong>Justification:</strong><br>${formatMultiline(justification)}</p>`
+        : "<p>No justification provided.</p>";
+      const rawBlock = rawMessage ? `<p><strong>Raw message:</strong><br>${formatMultiline(rawMessage)}</p>` : "";
+      nodeDetail.insertAdjacentHTML(
+        "beforeend",
+        `
+        <div class="evaluation-card ${cssClass}">
+          <div class="evaluation-score">${scoreLabel}</div>
+          <h4>Self-Evaluation</h4>
+          ${justificationBlock}
+          ${rawBlock}
+        </div>
+        `
+      );
     } else {
       appendJson("Inputs", node.inputs || {});
       appendJson("Outputs", node.outputs || {});
@@ -330,6 +359,42 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         },
         {
+          selector: ".node-evaluation",
+          style: {
+            "border-style": "dotted",
+            "border-color": "#a855f7",
+            "background-color": "rgba(168, 85, 247, 0.18)"
+          }
+        },
+        {
+          selector: ".node-evaluation.score-high",
+          style: {
+            "border-color": "#22c55e",
+            "background-color": "rgba(34, 197, 94, 0.24)"
+          }
+        },
+        {
+          selector: ".node-evaluation.score-medium",
+          style: {
+            "border-color": "#facc15",
+            "background-color": "rgba(250, 204, 21, 0.24)"
+          }
+        },
+        {
+          selector: ".node-evaluation.score-low",
+          style: {
+            "border-color": "#ef4444",
+            "background-color": "rgba(239, 68, 68, 0.24)"
+          }
+        },
+        {
+          selector: ".node-evaluation.score-unknown",
+          style: {
+            "border-color": "#a855f7",
+            "background-color": "rgba(168, 85, 247, 0.18)"
+          }
+        },
+        {
           selector: ".node-response.score-high",
           style: {
             "border-color": "#22c55e",
@@ -434,8 +499,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const stats = detail.graph_stats || {};
         const total = stats.total || (detail.nodes_index ? Object.keys(detail.nodes_index).length : 0);
         const prompts = stats.prompts != null ? stats.prompts : Math.round(total / 2);
-        const responses = stats.responses != null ? stats.responses : total - prompts;
-        graphHeaderCount.textContent = `${total} node(s) \u2022 ${prompts} prompt(s) \u2022 ${responses} response(s)`;
+        const responses = stats.responses != null ? stats.responses : Math.max(total - prompts, 0);
+        const evaluations = stats.evaluations != null ? stats.evaluations : Math.max(total - prompts - responses, 0);
+        const parts = [`${total} node(s)`, `${prompts} prompt(s)`, `${responses} response(s)`];
+        if (evaluations) {
+          parts.push(`${evaluations} evaluation(s)`);
+        }
+        graphHeaderCount.textContent = parts.join(" \u2022 ");
       }
       configureGraph(detail.graph_elements || []);
       renderNodeDetail(null);
@@ -478,3 +548,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadPlans();
 });
+
+
+
+

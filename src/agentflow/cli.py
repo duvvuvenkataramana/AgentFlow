@@ -13,6 +13,7 @@ import argparse
 import json
 import re
 import sys
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -113,6 +114,7 @@ def _handle_prompt(prompt: str) -> int:
     error_payload: Optional[Dict[str, Any]] = None
     notes = "Codex invocation succeeded."
     evaluation_payload: Optional[Dict[str, Any]] = None
+    flow_spec_payload: Optional[Dict[str, Any]] = None
 
     run_started = datetime.now(timezone.utc)
     try:
@@ -120,6 +122,9 @@ def _handle_prompt(prompt: str) -> int:
         events = result.events
         outputs = {"message": result.message, "events": events}
         usage = result.usage or {}
+        flow_spec_payload = _extract_flow_spec_from_message(result.message)
+        if flow_spec_payload:
+            outputs["flow_spec"] = flow_spec_payload["flow_spec"]
         evaluation_payload = _perform_self_evaluation(adapter, prompt, result.message)
         if evaluation_payload:
             outputs["evaluation"] = _build_evaluation_outputs(evaluation_payload)
@@ -139,6 +144,16 @@ def _handle_prompt(prompt: str) -> int:
         outputs = {**outputs, "events": events}
 
     duration = (run_finished - run_started).total_seconds()
+    synthetic_nodes: List[Dict[str, Any]] = []
+    if plan_status == "completed" and flow_spec_payload:
+        synthetic_nodes = _build_flow_nodes(
+            flow_spec_payload["flow_spec"],
+            run_started=run_started,
+            run_finished=run_finished,
+        )
+        if synthetic_nodes:
+            outputs.setdefault("flow_spec", flow_spec_payload["flow_spec"])
+
     summary = prompt[:80].replace("\n", " ").strip() or "Ad-hoc Codex execution"
 
     plan_document = _build_plan_document(
@@ -156,6 +171,7 @@ def _handle_prompt(prompt: str) -> int:
         duration_seconds=duration,
         notes=notes,
         evaluation_payload=evaluation_payload,
+        synthetic_nodes=synthetic_nodes,
     )
 
     _write_plan(target_path, plan_document)
@@ -196,6 +212,7 @@ def _build_plan_document(
     duration_seconds: float,
     notes: str,
     evaluation_payload: Optional[Dict[str, Any]],
+    synthetic_nodes: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     created_iso = run_started.isoformat()
     finished_iso = run_finished.isoformat()
@@ -232,6 +249,13 @@ def _build_plan_document(
     if error_payload:
         node["error"] = error_payload
 
+    nodes: List[Dict[str, Any]] = [node]
+    if synthetic_nodes:
+        nodes.extend(synthetic_nodes)
+
+    success_count = sum(1 for item in nodes if item.get("status") == "succeeded")
+    failure_count = sum(1 for item in nodes if item.get("status") == "failed")
+
     plan_document: Dict[str, Any] = {
         "schema_version": "1.0",
         "plan_id": plan_id,
@@ -244,12 +268,12 @@ def _build_plan_document(
         "status": plan_status,
         "tags": [],
         "context": {},
-        "nodes": [node],
+        "nodes": nodes,
         "rollup": {
             "completion_percentage": 100 if plan_status == "completed" else 0,
             "counts": {
-                "succeeded": 1 if node_status == "succeeded" else 0,
-                "failed": 1 if node_status != "succeeded" else 0,
+                "succeeded": success_count,
+                "failed": failure_count,
             },
             "last_writer": "agentflow-cli@local",
         },

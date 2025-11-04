@@ -1,4 +1,4 @@
-"""
+﻿"""
 Flask route registrations and data serialization for the AgentFlow viewer.
 """
 
@@ -136,6 +136,7 @@ def _plan_detail_payload(artifact: PlanArtifact) -> Dict[str, Any]:
     status_counts: Dict[str, int] = {}
     prompt_count = 0
     response_count = 0
+    evaluation_count = 0
 
     for node in raw_nodes:
         node_id = str(node.get("id") or "").strip()
@@ -229,10 +230,10 @@ def _plan_detail_payload(artifact: PlanArtifact) -> Dict[str, Any]:
             limit=90,
         )
         score_value = evaluation.get("score")
-        score_text = "Eval: —"
+        score_text = "Eval: --"
         if score_value is not None:
             score_text = f"Eval: {score_value:.2f}"
-        response_label = f"{node_id} response\\n{response_summary}\\n{score_text}"
+        response_label = f"{node_id} response\n{response_summary}\n{score_text}"
         response_classes = f"node-response {evaluation_class}".strip()
         graph_elements.append(
             {
@@ -266,6 +267,53 @@ def _plan_detail_payload(artifact: PlanArtifact) -> Dict[str, Any]:
             "depends_on": depends_on,
         }
         response_count += 1
+
+        show_evaluation = evaluation.get("score") is not None or evaluation.get("justification") or evaluation.get("raw_message")
+        if show_evaluation:
+            evaluation_id = f"{node_id}::evaluation"
+            justification = evaluation.get("justification") or ""
+            summary_source = justification or evaluation.get("raw_message") or ""
+            if summary_source:
+                summary_source = summary_source.replace("\n", " ").replace("\\n", " ")
+            evaluation_summary = _truncate(summary_source, limit=80) if summary_source else "Self-evaluation"
+            score_for_label = score_text.split(":", 1)[-1].strip()
+            evaluation_label = f"{node_id} evaluation\nScore: {score_for_label}\n{evaluation_summary}"
+            evaluation_classes = f"node-evaluation {evaluation_class}".strip()
+            graph_elements.append(
+                {
+                    "data": {
+                        "id": evaluation_id,
+                        "label": evaluation_label,
+                        "title": evaluation_summary,
+                        "parent": group_id,
+                        "status": status,
+                        "role": "evaluation",
+                    },
+                    "classes": evaluation_classes,
+                }
+            )
+            nodes_index[evaluation_id] = {
+                "id": evaluation_id,
+                "role": "evaluation",
+                "role_label": "Evaluation",
+                "parent_id": group_id,
+                "status": status,
+                "display_title": node.get("summary") or node_id,
+                "type": f"{node_type} evaluation",
+                "evaluation": evaluation,
+                "source_node_id": node_id,
+                "depends_on": [response_id],
+            }
+            evaluation_count += 1
+            graph_elements.append(
+                {
+                    "data": {
+                        "id": f"{response_id}->{evaluation_id}",
+                        "source": response_id,
+                        "target": evaluation_id,
+                    }
+                }
+            )
 
         graph_elements.append(
             {
@@ -313,9 +361,10 @@ def _plan_detail_payload(artifact: PlanArtifact) -> Dict[str, Any]:
         "graph_elements": graph_elements,
         "nodes_index": nodes_index,
         "graph_stats": {
-            "total": prompt_count + response_count,
+            "total": prompt_count + response_count + evaluation_count,
             "prompts": prompt_count,
             "responses": response_count,
+            "evaluations": evaluation_count,
         },
     }
 
@@ -408,3 +457,13 @@ def _evaluation_css_class(score: Optional[float]) -> str:
     if normalized >= 0:
         return "score-low"
     return "score-unknown"
+
+
+
+
+
+
+
+
+
+
