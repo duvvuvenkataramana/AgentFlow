@@ -12,8 +12,19 @@ class FakeAdapter:
 
     def run(self, prompt: str):
         self.calls.append(prompt)
-        events = [{"type": "item.completed", "item": {"type": "agent_message", "text": "hi"}}]
-        return CodexResult(message="Hello tester!", events=events, usage={"output_tokens": 5})
+        if len(self.calls) == 1:
+            events = [{"type": "item.completed", "item": {"type": "agent_message", "text": "hi"}}]
+            return CodexResult(
+                message="Hello tester!",
+                events=events,
+                usage={"output_tokens": 5, "input_tokens": 10},
+            )
+        evaluation_message = '{"score": 0.9, "justification": "Meets requirements."}'
+        return CodexResult(
+            message=evaluation_message,
+            events=[],
+            usage={"output_tokens": 3, "input_tokens": 12},
+        )
 
 
 def test_main_creates_yaml_on_success(monkeypatch, tmp_path):
@@ -34,6 +45,11 @@ def test_main_creates_yaml_on_success(monkeypatch, tmp_path):
     assert payload["status"] == "completed"
     assert payload["nodes"][0]["outputs"]["message"] == "Hello tester!"
     assert payload["nodes"][0]["metrics"]["usage"]["output_tokens"] == 5
+    evaluation = payload["nodes"][0]["outputs"]["evaluation"]
+    assert evaluation["score"] == 0.9
+    assert evaluation["justification"] == "Meets requirements."
+    assert payload["nodes"][0]["metrics"]["evaluation_score"] == 0.9
+    assert payload["eval_metrics"]["self_evaluation_score"] == 0.9
 
 
 class FailingAdapter:
