@@ -1,5 +1,4 @@
-"""
-AgentFlow CLI entry point.
+"""AgentFlow CLI entry point.
 
 Supports two workflows:
 1. `agentflow "<prompt>"` — execute the prompt through the Codex CLI adapter and persist a
@@ -22,10 +21,17 @@ from textwrap import dedent
 import yaml
 from langgraph.graph import END, StateGraph
 
-from agentflow.adapters import CodexCLIAdapter, CodexCLIError, CodexResult
+from agentflow.adapters import (
+    CodexCLIAdapter,
+    CodexCLIError,
+    CodexResult,
+    CopilotCLIAdapter,
+    CopilotCLIError,
+    MockAdapter,
+    MockAdapterError,
+)
 from agentflow.config import ConfigurationError, Settings
 from agentflow.viewer import run_viewer
-
 
 FLOW_SPEC_COMPILER_PROMPT = dedent(
     """\
@@ -46,7 +52,6 @@ FLOW_SPEC_COMPILER_PROMPT = dedent(
     >>>
     """
 )
-
 
 class _PromptRunState(TypedDict, total=False):
     prompt: str
@@ -71,13 +76,11 @@ class _PromptRunState(TypedDict, total=False):
     codex_result: CodexResult
     plan_document: Dict[str, Any]
 
-
 def _timing_update(state: _PromptRunState) -> Dict[str, Any]:
     run_started = state["run_started"]
     finished = datetime.now(timezone.utc)
     duration = (finished - run_started).total_seconds()
     return {"run_finished": finished, "duration_seconds": duration}
-
 
 def _build_prompt_pipeline(adapter: CodexCLIAdapter):
     graph = StateGraph(_PromptRunState)
@@ -308,7 +311,6 @@ def _build_prompt_pipeline(adapter: CodexCLIAdapter):
 
     return graph.compile()
 
-
 def main(argv: Optional[List[str]] = None) -> int:
     """
     CLI dispatcher.
@@ -350,14 +352,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     return _handle_prompt(prompt, output_mode=namespace.output)
 
-
 def _print_usage() -> None:
     print(
         "Usage:\n"
         '  agentflow "<prompt text>"        Execute prompt via Codex and capture YAML artifact.\n'
         "  agentflow view [options]         Launch local viewer for AgentFlow artifacts.\n"
     )
-
 
 def _handle_view_command(args: List[str]) -> int:
     parser = argparse.ArgumentParser(
@@ -395,7 +395,6 @@ def _handle_view_command(args: List[str]) -> int:
         return 0
     return 0
 
-
 def _handle_prompt(prompt: str, *, output_mode: str) -> int:
     try:
         settings = Settings.from_env()
@@ -407,7 +406,22 @@ def _handle_prompt(prompt: str, *, output_mode: str) -> int:
     base_name = timestamp.strftime("agentflow-%Y%m%d%H%M%S")
     target_path, plan_id = _resolve_plan_path(base_name)
 
-    adapter = CodexCLIAdapter(settings)
+    # Select adapter based on AGENTFLOW_ADAPTER environment variable
+    from os import environ
+    adapter_name = environ.get("AGENTFLOW_ADAPTER", "codex").lower()
+    
+    if adapter_name == "mock":
+        adapter = MockAdapter(settings)
+        adapter_error_class = MockAdapterError
+    elif adapter_name == "copilot":
+        adapter = CopilotCLIAdapter(settings)
+        adapter_error_class = CopilotCLIError
+    elif adapter_name == "codex":
+        adapter = CodexCLIAdapter(settings)
+        adapter_error_class = CodexCLIError
+    else:
+        print(f"Unknown adapter '{adapter_name}'. Use 'codex', 'copilot', or 'mock'.", file=sys.stderr)
+        return 1
 
     summary = prompt[:80].replace("\n", " ").strip() or "Ad-hoc Codex execution"
     request_afl = output_mode == "afl"
@@ -422,6 +436,25 @@ def _handle_prompt(prompt: str, *, output_mode: str) -> int:
 
     try:
         final_state = pipeline.invoke(initial_state)
+    except (CodexCLIError, CopilotCLIError, MockAdapterError) as exc:
+        node_status = "failed"
+        plan_status = "failed"
+        error_payload = {"message": str(exc)}
+        notes = f"Adapter invocation failed: {exc}"
+        run_finished = datetime.now(timezone.utc)
+        duration = (run_finished - timestamp).total_seconds()
+        final_state = {
+            "plan_status": "failed",
+            "node_status": "failed",
+            "error_payload": error_payload,
+            "notes": notes,
+            "run_started": timestamp,
+            "run_finished": run_finished,
+            "duration_seconds": duration,
+            "outputs": {"events": []},
+            "usage": {},
+            "events": [],
+        }
     except Exception as exc:  # pragma: no cover - defensive catch
         run_finished = datetime.now(timezone.utc)
         duration = (run_finished - timestamp).total_seconds()
@@ -506,7 +539,6 @@ def _handle_prompt(prompt: str, *, output_mode: str) -> int:
         return 1
     return 0
 
-
 def _resolve_plan_path(base_name: str) -> Tuple[Path, str]:
     directory = Path.cwd()
     candidate = directory / f"{base_name}.yaml"
@@ -518,7 +550,6 @@ def _resolve_plan_path(base_name: str) -> Tuple[Path, str]:
     filename = candidate.stem
     plan_id = f"plan-{filename.split('-', 1)[-1]}"
     return candidate, plan_id
-
 
 def _build_plan_document(
     *,
@@ -619,16 +650,13 @@ def _build_plan_document(
 
     return plan_document
 
-
 def _write_plan(path: Path, payload: Dict[str, Any]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(payload, handle, sort_keys=False)
 
-
 def _write_afl(path: Path, afl_text: str) -> None:
     with path.open("w", encoding="utf-8") as handle:
         handle.write(afl_text.rstrip() + "\n")
-
 
 def _perform_self_evaluation(
     adapter: CodexCLIAdapter,
@@ -667,7 +695,6 @@ def _perform_self_evaluation(
         payload["error"] = "Self-evaluation response was not valid JSON."
     return payload
 
-
 def _parse_evaluation_payload(message: str) -> Optional[Dict[str, Any]]:
     candidate = message.strip()
     if candidate.startswith("```"):
@@ -693,7 +720,6 @@ def _parse_evaluation_payload(message: str) -> Optional[Dict[str, Any]]:
 
     return {"score": score, "justification": justification}
 
-
 def _build_metrics(usage: Dict[str, Any], evaluation_payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {"usage": usage}
     if evaluation_payload:
@@ -708,7 +734,6 @@ def _build_metrics(usage: Dict[str, Any], evaluation_payload: Optional[Dict[str,
             metrics["evaluation_error"] = error
     return metrics
 
-
 def _build_evaluation_outputs(evaluation_payload: Dict[str, Any]) -> Dict[str, Any]:
     outputs: Dict[str, Any] = {}
     if evaluation_payload.get("score") is not None:
@@ -721,7 +746,6 @@ def _build_evaluation_outputs(evaluation_payload: Dict[str, Any]) -> Dict[str, A
     outputs["events"] = evaluation_payload.get("events", [])
     outputs["usage"] = evaluation_payload.get("usage", {})
     return outputs
-
 
 def _parse_plaintext_evaluation(message: str) -> Optional[Dict[str, Any]]:
     score: Optional[float] = None
@@ -774,7 +798,6 @@ def _parse_plaintext_evaluation(message: str) -> Optional[Dict[str, Any]]:
     justification = " ".join(justification_parts).strip() or None
     return {"score": score, "justification": justification}
 
-
 def _extract_flow_spec_from_message(message: str) -> Optional[Dict[str, Any]]:
     if not message:
         return None
@@ -813,7 +836,6 @@ def _extract_flow_spec_from_message(message: str) -> Optional[Dict[str, Any]]:
         payload["agentflowlanguage"] = afl_text
     return payload
 
-
 def _compile_flow_spec_from_prompt(
     adapter: CodexCLIAdapter,
     pseudo_code: str,
@@ -848,7 +870,6 @@ def _compile_flow_spec_from_prompt(
         response["error"] = "Compiler response did not contain a valid flow_spec."
 
     return response
-
 
 def _build_flow_nodes(
     flow_spec: Dict[str, Any],
@@ -932,7 +953,6 @@ def _build_flow_nodes(
         )
 
     return synthetic_nodes
-
 
 if __name__ == "__main__":  # pragma: no cover - module entry point
     raise SystemExit(main())
