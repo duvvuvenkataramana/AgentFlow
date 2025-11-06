@@ -1,8 +1,8 @@
 # AgentFlow
 
-**Teaching AI to learn how to learn — by autonomously creating its own prompt graphs.**
+**Teaching AI to learn how to learn — by autonomously creating its own LangGraphs.**
 
-AgentFlow rethinks agent orchestration. Instead of hand-written prompt chains, we ask the agent to draft _prompt graphs_ — directed workflows with branches, loops, and evaluation hooks. Each run becomes a rich artifact that captures source prompts, tool outputs, self-evaluations, and the synthetic graph structure that the agent just invented. Those artifacts feed a viewer, tests, and metrics that make it easier to iterate toward domain-specific agentic systems.
+AgentFlow rethinks agent orchestration. Instead of hand-written prompt chains, we ask the agent to draft _LangGraphs_ — directed workflows with branches, loops, and evaluation hooks. Each run becomes a rich artifact that captures source prompts, tool outputs, self-evaluations, and the synthetic graph structure that the agent just invented. Those artifacts feed a viewer, tests, and metrics that make it easier to iterate toward domain-specific agentic systems.
 
 <img width="1237" height="887" alt="AgentFlow viewer" src="https://github.com/user-attachments/assets/c5fd8103-5e81-474c-be03-d05a2bbd39aa" />
 
@@ -10,7 +10,7 @@ AgentFlow rethinks agent orchestration. Instead of hand-written prompt chains, w
 
 Modern agent workflows span tools, retries, and backtracking, yet most planners still emit linear prompt chains. That leaves operators guessing about _what_ ran and _why_. AgentFlow closes that gap by standardising on a canonical YAML artifact that survives from planning through execution while layering on:
 
-- **Autonomous prompt-graph generation** – the agent itself proposes nodes, branches, and loop constructs. We persist those graphs as structured data and render them in the viewer.
+- **Autonomous LangGraph generation** – the agent itself proposes nodes, branches, and loop constructs. We persist those graphs as structured data and render them in the viewer.
 - **Run-level evaluation nodes** – self-judgement results now show up as dedicated graph nodes, so it is obvious which answers passed or failed.
 - **Explainable execution** – every node keeps prompts, responses, metrics, and timeline data so you can diff runs, audit decisions, and replay segments.
 - **AgentOps-ready observability** – the CLI, viewer, and tests work together to surface evaluation scores, usage, and synthetic graph statistics for downstream analytics.
@@ -18,7 +18,7 @@ Modern agent workflows span tools, retries, and backtracking, yet most planners 
 ## Repository Layout
 
 - `src/agentflow/` – core package, including the Codex CLI adapter and Flask viewer.
-- `tests/` – unit tests plus live Codex scenarios that exercise prompt-graph generation.
+- `tests/` – unit tests plus live Codex scenarios that exercise LangGraph generation.
 - `sandbox/` – local plan artifacts written by live runs (ignored by git).
 
 ## Quick Start
@@ -37,7 +37,7 @@ npm install -g @openai/codex
 set OPENAI_API_KEY=sk-...
 ```
 
-## Generate a Showcase Prompt Graph
+## Generate a Showcase LangGraph
 
 Use the built-in CLI to trigger a demonstration run that produces a multi-branch DAG with evaluation nodes:
 
@@ -78,6 +78,17 @@ py -3 -m agentflow.cli --output afl "while(exploring){ ask_questions(); investig
 
 The command above writes the standard `sandbox/agentflow-<timestamp>.yaml` artifact plus `sandbox/agentflow-<timestamp>.afl`, which captures the flow in AgentFlowLanguage form.
 
+## LangGraph Orchestration
+
+AgentFlow now delegates prompt execution and evaluation to a LangGraph state machine. The CLI builds a LangGraph pipeline that:
+
+- invokes the Codex adapter,
+- extracts LangGraph-friendly `flow_spec` payloads (or compiles them when missing),
+- performs self-evaluation,
+- and injects synthetic LangGraph nodes into the persisted plan artifact.
+
+You can extend this orchestration by editing `_build_prompt_pipeline` in `src/agentflow/cli.py`; add new nodes, conditional edges, or tooling integrations while staying inside the LangGraph execution model.
+
 ## Inspect the DAG in the Viewer
 
 ```bash
@@ -102,6 +113,6 @@ This repository is an evolving prototype toward a full AgentOps toolkit. Near-te
 
 - richer synthetic-node attribution (surfacing tool outputs and loop counters),
 - comparative run analytics across plan artifacts,
-- and adapters beyond Codex so multiple LLM backends can propose and execute prompt graphs.
+- and adapters beyond Codex so multiple LLM backends can propose and execute LangGraphs.
 
 Feedback, issues, and contributions are welcome! Tag your ideas with **#AgentOps** and share how you are using AgentFlow to teach agents how to learn.

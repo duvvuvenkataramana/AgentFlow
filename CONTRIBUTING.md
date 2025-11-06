@@ -1,6 +1,6 @@
 # Contributing to AgentFlow
 
-Thanks for your interest in contributing to AgentFlow. This project explores agent-generated prompt graphs (flows and loops, not prompt chains) and tooling for evaluating and improving agentic systems — AgentOps. Contributions are welcome across design, evaluation, tooling, docs, and integration work.
+Thanks for your interest in contributing to AgentFlow. This project explores agent-generated LangGraphs (flows and loops, not linear prompt chains) and tooling for evaluating and improving agentic systems — AgentOps. Contributions are welcome across design, evaluation, tooling, docs, and integration work.
 
 ## Ways to contribute
 - Open issues describing bugs, feature requests, or design questions.
@@ -14,9 +14,10 @@ If you want somewhere to start, consider:
 - Add reproducible example flows and evaluation harnesses.
 - Implement metrics collection for runs (latency, success, hallucination rate, throughput).
 - Create more adapters (LLM providers, environment connectors).
-- Improve the viewer UI for visualizing prompt graphs and run traces.
+- Improve the viewer UI for visualizing LangGraphs and run traces.
 - Build end-to-end tests and CI for live agent runs (sandboxed).
-- Implement automated self-improvement experiments: collect run metrics and use them to refine prompt-graph generation.
+- Implement automated self-improvement experiments: collect run metrics and use them to refine LangGraph generation.
+- Extend the LangGraph-driven CLI pipeline with new analysis or guardrail nodes.
 
 ## How to submit
 1. Fork the repo and create a topic branch: `git checkout -b feat/your-feature`
@@ -48,6 +49,6 @@ By contributing, you agree to abide by the project's license (see repository roo
 
 ---
 
-AgentFlow vision: teaching AI to learn how to learn by letting agents autonomously create prompt graphs (flows, loops, and conditional logic). We can collect run metrics, evaluate agentic systems as a whole, and bootstrap domain-specific agentic systems via iterative improvement. Your contributions will help push AgentOps forward.
+AgentFlow vision: teaching AI to learn how to learn by letting agents autonomously create LangGraphs (flows, loops, and conditional logic). We can collect run metrics, evaluate agentic systems as a whole, and bootstrap domain-specific agentic systems via iterative improvement. Your contributions will help push AgentOps forward.
 
 Repository: https://github.com/stancsz/AgentFlow

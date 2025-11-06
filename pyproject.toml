@@ -12,7 +12,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "pydantic>=2.8",
     "PyYAML>=6.0",
-    "Flask>=3.0"
+    "Flask>=3.0",
+    "langgraph>=0.2.40"
 ]
 
 [project.optional-dependencies]
