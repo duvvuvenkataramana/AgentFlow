@@ -84,6 +84,32 @@ agentflow "Your prompt here"
 
 ---
 
+### 4. Gemini (Google) CLI Adapter
+**Requires:** Gemini CLI (or compatible wrapper) and optional GEMINI API key
+
+Use when:
+- You want to use Google's Gemini CLI to drive agent responses
+
+Usage:
+```powershell
+# Set adapter to gemini
+$env:AGENTFLOW_ADAPTER = "gemini"
+
+# Optional path and key
+$env:AGENTFLOW_GEMINI_PATH = "C:\\path\\to\\gemini.exe"  # default: gemini
+$env:AGENTFLOW_GEMINI_API_KEY = "ya29..."  # optional API key
+
+agentflow "Your prompt here"
+```
+
+Configuration:
+- `AGENTFLOW_GEMINI_PATH` — path to the Gemini CLI binary (default: `gemini`)
+- `AGENTFLOW_GEMINI_API_KEY` — optional API key injected as `GEMINI_API_KEY` env var
+
+See `src/agentflow/adapters/GEMINI_README.md` for more details and examples.
+
+---
+
 ## Adapter Selection
 
 The CLI reads the `AGENTFLOW_ADAPTER` environment variable to choose which adapter to use:
@@ -93,6 +119,7 @@ The CLI reads the `AGENTFLOW_ADAPTER` environment variable to choose which adapt
 | Codex (default) | `codex` or unset |
 | Copilot | `copilot` |
 | Mock | `mock` |
+| Gemini | `gemini` |
 
 **Example: switch between adapters**
 ```powershell

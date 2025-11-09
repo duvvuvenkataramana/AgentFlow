@@ -14,6 +14,7 @@ ADAPTERS = {
     "copilot": CopilotCLIAdapter,
     "mock": MockAdapter,
     "claude": ClaudeCLIAdapter,
+    "gemini": GeminiCLIAdapter,
 }
 
 __all__ = [
