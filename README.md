@@ -6,6 +6,22 @@ AgentFlow rethinks agent orchestration. Instead of hand-written prompt chains, w
 
 <img width="1237" height="887" alt="AgentFlow viewer" src="https://github.com/user-attachments/assets/c5fd8103-5e81-474c-be03-d05a2bbd39aa" />
 
+## Installation
+
+To get started with AgentFlow:
+
+```bash
+pip install agentflow
+```
+
+For development setup, clone the repository and install in editable mode:
+
+```bash
+git clone https://github.com/stancsz/AgentFlow.git
+cd AgentFlow
+pip install -e .
+```
+
 ## Why AgentFlow
 
 Modern agent workflows span tools, retries, and backtracking, yet most planners still emit linear prompt chains. That leaves operators guessing about _what_ ran and _why_. AgentFlow closes that gap by standardising on a canonical YAML artifact that survives from planning through execution while layering on:
